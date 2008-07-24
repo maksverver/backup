@@ -1,0 +1,27 @@
+TODO:
+- Rename/seperate storage internal configuration and user configuration
+  (which IS used to initialize the storage)
+
+- Store file paths inside entry, instead of encoding it in the entry key,
+  so entry keys are of a smaller size (for greater compatibility with storage
+  backends that don't support large keys).
+
+- Secure pickle.loads so no arbitrary code can be loaded from remote storage!
+
+- Implement a tool to erase entries from the repository
+- Design & implement rules for matching files and setting parameters
+- Design & implement version purging
+- Design & implement testing framework!!
+- Client-side encryption of data (and metadata?)
+- Implement tool to check reference counts of blocks and delete them when
+  possible (in purging tool?)
+
+Future:
+- Storage of directories
+- Port to C/C++?
+
+General code clean-up:
+- Add docstrings where necessary
+- Document which exceptions can be thrown
+- Remove obsolete imports
+- Replace strings raised as exceptions by real exceptions

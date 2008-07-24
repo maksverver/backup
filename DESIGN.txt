@@ -1,0 +1,251 @@
+Design of a desktop backup system
+
+
+Table of Contents
+
+1. Goals
+2. Possible future goals
+3. Design
+    3.1. Local cache
+    3.2. Remote storage
+        3.2.1. FS storage module
+        3.2.2. FTP storage module
+        3.2.3. Amazon S3 storage module
+4. File selection rules
+5. Purging rules
+6. Implementation details
+    6.1. Client-side compression
+    6.2. Entry metadata
+
+
+1. Goals
+
+Primary goal: to develop a pratical desktop backup system. The system should
+run in the background, making back-up copies of modified files to a remote
+location, with minimal interference with the user's work.
+
+The system makes no attempts to create consistent snapshots. That means that
+consistent snapshots of sets of files can not be restored. The goal is to
+create back-ups of important files that can be recovered in case of emergency,
+rather than serve as a complete-system back-up tool.
+
+Features:
+ - A flexible rules engine specifying which files to back up, and how.
+ - Files stored securely at a repository in a remote location
+ - Reasonable low data transfer and storage requirements
+ - Multiple versions of files are stored, so earlier versions may be retrieved
+   even if a file has been modified recently
+ - Prototype written in Python
+
+The system consists of a program to make the back-ups, a program to restore
+files, and a set of programs to view and manage the contents of the repository.
+
+
+2. Possible future goals
+
+Features:
+ - Sharing of files between users
+ - Client-side encryption
+ - Graphical configuration and management utilities
+ - Efficient implementation in C/C++
+
+
+3. Design
+
+Only regular files, symbolic links and directories are stored (i.e. not FIFO's,
+device nodes, sockets, etcetera); these are called repository entries. Entries
+have associated metadata (like original file path, creation and modification
+times, associated group and owner, access permissions, etcetera).
+
+The contents of files are split in blocks (of a configurable size; i.e. 100KB),
+which are stored seperately (and shared between different files and different
+versions of files).
+
+The remote repository stores both data blocks and entries, where a data block
+is an opaque block of data with an associated key, and an entry is a metadata
+structure and a list of keys corresponding to data blocks that form the
+contents of the file. Both of these should be reasonably small (i.e. a few MB
+at most), so they can be handled in memory.
+
+To reduce the remote data traffic, the back-up utilities do not operate on the
+remote repository directly. Instead, a local cache is maintained that contains
+the entries in the repository and a list of available data blocks (but not the
+actual contents of data blocks). Whenever the local cache is unavailable or
+unusable, it is regenerated from the repository. The management utilities keep
+the cache consistent when writing to the repository.
+
+
+3.1. Local cache
+
+Both the online repository and the local cache maintain a revision identifier.
+This is a (potentially random) number that is used to check if the cache is
+still up to date. Whenever the cache database is opened, its revision is
+compared with the revision of the remote repository; if they differ, the cache
+is deemed stale and recreated from the remote repository. When the cache is
+closed after making modifications to the repository, the revision of both the
+cache and the remote repository are updated to reflect the new revision.
+
+The cache can be opened in offline and in online mode. In offline mode, no
+connection is made with the remote repository, no comparison of revisions is
+made, no data blocks can be retrieved, and no changes can be made to the
+repository contents. The back-up tool requires online mode, but offline mode
+is useful to list the contents of the repository when the online repository
+is unavaiable.
+
+The remote repository stores entries and data blocks, but does not keep track
+of which data blocks are in use. The local cache, however, maintains reference
+counts for data blocks, so they can be removed when purging stale data.
+
+
+3.2. Remote storage
+
+The remote storage is available through a storage object. Several different
+storage types (like FTP, a filesystem, and Amazon's Simple Storage Service)
+are available, which are implemented by a set of classes that share a common
+interace. Most of the interface used by the utilities is implemented in the
+StorageBase class, which relies on a specific storage module for the actual
+data storage.
+
+Data modules extend the StorageBase class, and inherit the missing members,
+and should be able to perform the following functions:
+ - connect to the remote repository
+ - disconnect from the remote repository
+ - destroy the repository, erasing all data contained there
+ - store a value at a given key
+ - retrieve a value at a given key
+ - list all keys in use
+ - erase the data associated with a given key
+Keys and values are binary strings. The empty string is not a valid key, and
+keys may be assumed to be 'reasonably short' (i.e. may be used as database
+keys or file names).
+
+A repository in this context refers to a location where data is stored;
+i.e. it may be a subdirectory on an FTP site, or a filesystem location,
+etcetera. The format used to describe a location is specific for each type of
+storage module.
+
+See the StorageBase class for details on what members must be implemented by
+storage modules, and how they should be implemented.
+
+
+3.2.1. FS storage module
+
+The FS (file system) storage module stores data entries on a local filesystem.
+The repository location denoted the path of a directory, which should not yet
+exist when the repository is created, altough all parent directories do exist.
+(i.e. if the path for a new repository is /path/to/repository, /path/to must
+already be a writeable directory, altough /path/to/repository does not yet
+exist and will be created).
+
+
+3.2.2. FTP storage module
+
+The repository location denotes a path of the form:
+    ftp://HOSTNAME/path/to/repository/
+The path must end with a trailing slash, and describes a directory where the
+repository is created (i.e. when creating the repository, this directory must
+not yet exist).
+
+The FTP storage module stores values a binary data files, using a URL-safe
+base64-encoding of the key as a the file name. All files are stored in a single
+directory. (Note: this may be problematic on some file systems.)
+
+
+3.2.3. Amazon S3 storage module
+
+Amazon S3 (short for Simple Storage Service) is a webservice provided by Amazon
+for reliable and flexible storage of arbitrary data, paid for by amount of
+storage used per month (currently $0.15/GiB/month excluding storage overhead)
+and amount of data transferred (currently $0.20/GiB excluding protocol
+overhead).
+
+The repository location denotes an Amazon S3 path of the form:
+    http://s3.amazonaws.com/BUCKET/PREFIX
+Note that the bucket may not be encoded in the domain name (as this form can
+not be used with authenticated access). A non-empty dummy-file is stored at
+/prefix to denote that the repository is in use. Values are stored as files
+posted to /PREFIX concatenated with an URL-safe base64-encoding of the key.
+
+
+4. File selection rules
+
+Files are selected by walking through a directory hierarchy recursively.
+For each potential entry, the rules are applied and parameters updated. A
+decision to back-up the file is then made based on the parameters, the file's
+last modification time and the modification time in the repository.
+
+Variables affecting the match:
+    Name        Default     Meaning
+    skip        no          Skip this file/directory
+    cooldown    1 min       Only back-up when the modification time is `delay`
+                            seconds in the past
+    period      1 hour      Only back-up a file once in this time period
+    compress    "deflate"   Compression used for storing data. Either
+                            "deflate" or "bzip2".
+    level       0           Compression level, from 1 to 9, or 0 to indicate
+                            codec default (9 for bzip2, 0 for gzip)
+    blocksize   64k         Block size (use 1M for bzip2)
+
+Rules determine:
+- which files are backed-up
+- what kind of metadata is kept
+- how versions are managed
+TODO: elaborate & specify
+
+
+5. Purging rules
+
+After a back-up pass, files are purged. The latest version of all files that
+were not excluded from backup, are marked as protected and are always kept.
+
+TODO: elaborate & specify
+
+
+6. Implementation details
+
+
+6.1. Client-side compression
+
+Data blocks can be compressed client-side, so an identifier should be stored
+with the data to identify the compressor used. The compressor identifiers
+('cid') is always a single character; the following are used:
+    CId Compression
+    --- -----------
+     -  none
+     z  deflate
+     b  bzip2
+
+
+6.2. Entry metadata
+
+Metadata is associated in the form of key/value pairs, where each key is a
+1-character identifier describing a particular property of a file. Note that
+any of these properties may be absent for a given file.
+
+These are normally set by the back-up tool, altough the storage timestamp is
+set by the storage class when the entry is stored.
+
+    Id. Meaning
+    --- -------
+    s   file size
+    c   creation timestamp (ex. "123456")
+    m   modification timestamp (ex. "123456")
+    t   storage timestamp (time file was stored)
+    p   UNIX permissions stored in octal
+        0001: execute permission for all
+        0002: read permission for all
+        0004: write permission for all
+        0010: execute permission for group
+        0020: read permission for group
+        0040: write permission for group
+        0100: execute permission for owner
+        0200: read permission for owner
+        0400: write permission for owner
+        1000: symbolic link
+        2000: set user id on execution
+        4000: set group id on execution
+    o   UNIX owner id (ex. "12")
+    g   UNIX group id (ex. "12")
+
+
+EOF

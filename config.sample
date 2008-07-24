@@ -1,0 +1,53 @@
+; Sample configuration file
+;
+; This file is searched for in the following locations, in order:
+;   $HOME/.backup/config
+;   /usr/local/etc/backup/config
+;   /etc/backup/config
+; Where $HOME is the value of the HOME environmental variable.
+
+
+[storage]
+
+; Select which storage module to use
+# module = FS              ; Store on a mounted filesystem
+# module = S3              ; Store via Amazon S3
+# module = FTP             ; Store on a remote server via FTP
+
+; The connection string. What format this is in, depends on the storage
+; backend used. Examples are for FS, S3 and FTP respectively:
+# connection = ftp://some.example.com/path/to/repository/
+# connection = http://s3.amazonaws.com/bucket/path/to/repository/
+# connection = /var/backup/path/to/repository
+
+; Most storage backends will need some authorization data like a username and
+; a password to connect to the storage.
+;
+; For Amazon S3, the username is your Web Services access key identifier,
+; and your password is your secret access key.
+# username = 1D9FVRAYCP1VJS767E02
+# password = AKSWjZGVmZ2hpamtsYWJjZGVmZ2hpamtsbW5vcHF
+
+; If "credentials" is set, it refers to a file (presumably with more
+; restrictive access permissions) from which credentials are read instead.
+# credentials = /usr/local/etc/backup/secret/credentials
+
+[cache]
+; Location to create the storage cache.
+; If not set, $HOME/.backup/cache.db is used (or 'cache.db' if HOME is not set).
+# path = /var/db/backup-cache.db
+
+[logging]
+; Log messages have a priority associated with them; the more serious the
+; condition, the higher the priority. All messages below the log level are
+; supressed. The following meanings are assigned:
+;   CRITICAL  50
+;   ERROR     40
+;   WARNING   30    (default)
+;   INFO      20
+;   DEBUG     10
+# level = 20
+
+; By default, log messages are send to the screen; if "path" is set, they are
+; send to a file at the specified path instead.
+# path = /var/log/backup.log
