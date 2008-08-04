@@ -8,6 +8,7 @@ from logging import debug, info, warning, error, critical, exception
 from defs import DEFAULT_ARGS
 from compression import compressors
 from init import init
+from math import log
 
 from md5 import new as MD5
 hash_function = lambda data: MD5(data).digest()
@@ -147,5 +148,33 @@ class UpdateScanner:
         cache.updateRevision(storage)
 
 
+class Purger:
+    def __init__(self):
+        pass
+
+    def purge(self):
+        now = int(time())
+        for path in cache.listEntries():
+            debug('Purging for "%s"... ', path);
+            for version in cache.listVersions(path):
+                entry = cache.getEntry(path, version)
+                metadata = entry['metadata']
+                if 't' not in metadata:
+                    warning( 'Version %d of file "%s" cannot be purged because '+
+                             'it has no storage timestamp!', version, path )
+                    continue
+
+                age = now - metadata['t']
+                if age <= 0:
+                    if age < 0:
+                        warning( 'Version %d of file "%s" has negative age of %d',
+                                 version, path, age )
+                    continue
+                slot
+                
+                debug('\tversion %d stored %d sec ago', version, age)
+
+
 if __name__ == "__main__":
     UpdateScanner().process('/home/maks/Desktop/Backup/test')
+    Purger().purge()

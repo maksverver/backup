@@ -219,7 +219,6 @@ class StorageS3 (StorageBase):
         conn.putheader('Authorization', auth)
         conn.putheader('Content-Length', str(len(data)))
         if data:
-            conn.putheader('Content-Length', str(len(data)))
             conn.putheader('Content-Md5', hash)
         for key in metadata:
             conn.putheader('x-amz-meta-' + key, str(metadata[key]))
